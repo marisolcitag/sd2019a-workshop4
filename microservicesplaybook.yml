@@ -1,0 +1,54 @@
+- name: Configuracion de microservicios 
+  hosts: microservices
+  become: yes
+  become_user: root
+  become_method: sudo
+  tasks:
+  - name: Install unzip and curl 
+    yum: name={{ item }} update_cache=true state=installed
+    with_items:
+    - unzip 
+    - curl 
+    tags: packages
+  - name: verificar que la configuracion no exista
+    stat:
+      path: /etc/consul.d
+    register: directory_exists
+  - name: descargar consul 
+    unarchive:
+      src: https://releases.hashicorp.com/consul/1.1.0/consul_1.1.0_linux_amd64.zip
+      dest: /tmp
+      remote_src: yes
+    when: not directory_exists.stat.exists
+  - name: create folder and move consul 
+    command: "{{ item }}"
+    with_items:
+    - mv /tmp/consul /usr/bin
+    - mkdir /etc/consul.d 
+    - mkdir -p /etc/consul/data
+    - adduser consul
+    - adduser microservices
+    - chown -R consul:consul /etc/consul
+    - chown -R consul:consul /etc/consul.d
+    sudo: yes
+    when: not directory_exists.stat.exists
+  - firewalld:
+      port: 8301/tcp
+      permanent: true
+      state: enabled
+  - firewalld:
+      port: 8080/tcp
+      permanent: true
+      state: enabled
+  - name: reiniciar el firewall
+    service:
+      name: firewalld
+      state: restarted
+  - name: run consul 
+    command: consul agent -server -bootstrap-expect=1 \ -data-dir=/etc/consul/data -node=agent-server -bind=192.168.56.102 \   -enable-script-checks=true -config-dir=/etc/consul.d -client 0.0.0.0
+    become: yes
+    become_user: consul 
+    become_method: sudo
+    async: 5 
+    poll: 0
+
